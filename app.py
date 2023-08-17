@@ -33,11 +33,33 @@ swagger_config = {
     "swagger_ui": True,
     "specs_route": "/docs/"
 }
-swagger = Swagger(app, template=swagger_template,
-                  config=swagger_config)
+swagger = Swagger(app, template=swagger_template, config=swagger_config)
+
+# Custom homepage route
+@app.route('/', methods=['GET'])
+def home():
+    welcome_msg = {
+        "version": "1.0.0",
+        "message": "Welcome to Flask Sentiment Analysis",
+        "author": "Kelompok 3"
+    }
+    return jsonify(welcome_msg)
 
 max_features = 100000
 tokenizer = Tokenizer(num_words=max_features, split=' ', lower=True)
+
+# Set num_words for the tokenizer
+num_words = 10000  # Use the same value as in your training code
+tokenizer = Tokenizer(num_words=num_words, split=' ', lower=True)
+
+# Load models and feature files
+model_file_from_lstm = load_model("lstm/model/model.h5")
+with open("lstm/resources/x_pad_sequences.pickle", "rb") as file:
+    feature_file_from_lstm = pickle.load(file)
+
+model_file_from_rnn = load_model("rnn/model/model.h5")
+with open("rnn/resources/x_pad_sequences.pickle", "rb") as file:
+    feature_file_from_rnn = pickle.load(file)
 
 sentiment = ['negative', 'neutral', 'positive']
 
@@ -55,14 +77,15 @@ with open("rnn/resources/x_pad_sequences.pickle", "rb") as file:
 @app.route("/lstm", methods=['POST'])
 def lstm():
     try:
-        original_text = request.form.get('text')
-        
+        original_text = request.form.get('text')        
         if original_text is not None:
             cleaned_text = ' '.join(clean_texts(original_text))  # Clean the text
             text = [cleaned_text]
+            
+            # Tokenize and pad the text to have a length of 96 tokens
             feature = tokenizer.texts_to_sequences(text)
-            feature = pad_sequences(feature, maxlen=feature_file_from_lstm.shape[1])
-
+            feature = pad_sequences(feature, maxlen=96)  # Use the same maxlen as in training
+            
             prediction = model_file_from_lstm.predict(feature)
             get_sentiment = sentiment[np.argmax(prediction[0])]
 
@@ -84,55 +107,6 @@ def lstm():
         response_data = jsonify(json_response)
         return response_data
     
-    except Exception as e:
-        json_response = {
-            'status_code': 500,
-            'error': str(e)
-        }
-        response_data = jsonify(json_response)
-        return response_data
-
-# @cross_origin()
-@swag_from("docs/lstmCSV.yml", methods=['POST'])
-@app.route("/lstmCSV", methods=['POST'])
-def lstmCSV():
-    try:
-        original_file = request.files['file']
-        filename = secure_filename(original_file.filename)
-        filepath = 'static/' + filename
-        original_file.save(filepath)
-    
-        df = pd.read_csv(filepath, header=0)
-    
-        sentiment_results = []
-        cleaned_texts = []
-
-        for text in df.iloc[:, 0]:
-            original_text = text
-            cleaned_text = ' '.join(clean_texts(original_text))
-            cleaned_texts.append(cleaned_text)
-
-            text = [cleaned_text]
-
-            feature = tokenizer.texts_to_sequences(text)
-            feature = pad_sequences(feature, maxlen=feature_file_from_lstm.shape[1])
-        
-            prediction = model_file_from_lstm.predict(feature)
-            get_sentiment = sentiment[np.argmax(prediction[0])]
-            sentiment_results.append(get_sentiment)
-
-        json_response = {
-            'status_code': 200,
-            'description': 'Results of LSTM model',
-            'data': {
-                'original_text': df.iloc[:, 0].tolist(),
-                'cleaned_text': cleaned_texts,
-                'sentiment': sentiment_results
-            }
-        }
-        response_data = jsonify(json_response)
-        return response_data
-
     except Exception as e:
         json_response = {
             'status_code': 500,
